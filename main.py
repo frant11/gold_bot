@@ -33,7 +33,7 @@ RSI_MIN_SELL = 35   # Mayor margen para entrar en ventas
 
 INTERVALO_SEG = 60
 EPIC          = "GOLD"
-RESOLUCION    = "MINUTE_1" # Cambiado a 1 minuto
+RESOLUCION    = "MINUTE" # Cambiado a 1 minuto
 VELAS         = 60
 
 BASE_URL = "https://demo-api-capital.backend-capital.com"
