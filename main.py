@@ -1,8 +1,7 @@
 """
 =============================================================
   GOLD EMA9/EMA25 + RSI + VOLUMEN BOT
-  Versión Railway - Las credenciales se leen de variables
-  de entorno, nunca hardcodeadas en el código.
+  Versión Railway - Optimizada para Scalping (1 Minuto)
 =============================================================
 """
 
@@ -21,19 +20,20 @@ PASSWORD     = os.environ["CAP_PASSWORD"]
 
 CAPITAL_INICIAL  = float(os.getenv("CAPITAL_INICIAL",  "40"))
 META_CAPITAL     = float(os.getenv("META_CAPITAL",    "100"))
-PROFIT_POR_TRADE = float(os.getenv("PROFIT_POR_TRADE", "10"))
-STOP_LOSS_USD    = float(os.getenv("STOP_LOSS_USD",     "5"))
+# Ajustes de Scalping por defecto
+PROFIT_POR_TRADE = float(os.getenv("PROFIT_POR_TRADE", "3")) 
+STOP_LOSS_USD    = float(os.getenv("STOP_LOSS_USD",    "2")) 
 
 EMA_RAPIDA   = 9
 EMA_LENTA    = 25
 RSI_PERIODO  = 14
-VOL_PERIODO  = 20
-RSI_MAX_BUY  = 55
-RSI_MIN_SELL = 45
+VOL_PERIODO  = 10   # Reducido para ser más sensible a cambios recientes
+RSI_MAX_BUY  = 65   # Mayor margen para entrar en compras
+RSI_MIN_SELL = 35   # Mayor margen para entrar en ventas
 
 INTERVALO_SEG = 60
 EPIC          = "GOLD"
-RESOLUCION    = "MINUTE_5"
+RESOLUCION    = "MINUTE_1" # Cambiado a 1 minuto
 VELAS         = 60
 
 BASE_URL = "https://demo-api-capital.backend-capital.com"
@@ -44,7 +44,6 @@ session_headers = {}
 #  UTILIDADES
 # ─────────────────────────────────────────
 def log(msg: str):
-    # Railway captura stdout automáticamente como logs
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}", flush=True)
 
 def iniciar_sesion():
@@ -105,8 +104,9 @@ def calcular_rsi(serie, periodo=14) -> float:
     delta    = serie.diff()
     ganancia = delta.clip(lower=0)
     perdida  = (-delta).clip(lower=0)
-    avg_g    = ganancia.rolling(window=periodo).mean().iloc[-1]
-    avg_p    = perdida.rolling(window=periodo).mean().iloc[-1]
+    # Usamos la vela cerrada (iloc[-2]) para el cálculo
+    avg_g    = ganancia.rolling(window=periodo).mean().iloc[-2]
+    avg_p    = perdida.rolling(window=periodo).mean().iloc[-2]
     if avg_p == 0:
         return 100.0
     return round(100 - (100 / (1 + avg_g / avg_p)), 2)
@@ -119,13 +119,14 @@ def analizar(df) -> dict:
     ema25 = calcular_ema(closes, EMA_LENTA)
     rsi   = calcular_rsi(closes, RSI_PERIODO)
 
-    ema9_actual  = ema9.iloc[-1]
-    ema9_prev    = ema9.iloc[-2]
-    ema25_actual = ema25.iloc[-1]
-    ema25_prev   = ema25.iloc[-2]
+    # CORRECCIÓN DE REPINTADO: Evaluamos velas cerradas [-2] y [-3]
+    ema9_actual  = ema9.iloc[-2]
+    ema9_prev    = ema9.iloc[-3]
+    ema25_actual = ema25.iloc[-2]
+    ema25_prev   = ema25.iloc[-3]
 
-    vol_actual   = volumes.iloc[-1]
-    vol_promedio = volumes.iloc[-VOL_PERIODO:].mean()
+    vol_actual   = volumes.iloc[-2]
+    vol_promedio = volumes.iloc[-VOL_PERIODO-1:-1].mean() # Media de velas cerradas
     vol_alto     = vol_actual > vol_promedio
 
     cruce_alcista = (ema9_prev <= ema25_prev) and (ema9_actual > ema25_actual)
@@ -148,8 +149,10 @@ def analizar(df) -> dict:
 def hay_cruce_contrario(df, direccion) -> bool:
     ema9  = calcular_ema(df["close"], EMA_RAPIDA)
     ema25 = calcular_ema(df["close"], EMA_LENTA)
-    a9, p9   = ema9.iloc[-1],  ema9.iloc[-2]
-    a25, p25 = ema25.iloc[-1], ema25.iloc[-2]
+    # Evitamos el repintado al salir también
+    a9, p9   = ema9.iloc[-2],  ema9.iloc[-3]
+    a25, p25 = ema25.iloc[-2], ema25.iloc[-3]
+    
     if direccion == "BUY":
         return (p9 >= p25) and (a9 < a25)
     return (p9 <= p25) and (a9 > a25)
@@ -207,7 +210,7 @@ def obtener_balance() -> float:
 # ─────────────────────────────────────────
 def main():
     log("=" * 50)
-    log("  🤖  GOLD EMA9/EMA25 + RSI + VOLUMEN BOT")
+    log("  🤖  GOLD EMA9/EMA25 + RSI + VOLUMEN SCALPER")
     log(f"  Capital: ${CAPITAL_INICIAL}  →  Meta: ${META_CAPITAL}")
     log(f"  TP: +${PROFIT_POR_TRADE} | SL: -${STOP_LOSS_USD}")
     log("=" * 50)
